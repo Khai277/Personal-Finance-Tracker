@@ -1,33 +1,32 @@
 
-# Personal Finance Tracker
+## Version 2 - REST API
 
-A command-line personal finance tracker built with Python.
+Built a REST API using Python and FastAPI.
 
-## Features
-- Add income and expenses
-- Categorize transactions
-- View transaction history
+### Features
+- Retrieve transactions using GET
+- Add income and expenses using POST
+- Update transactions using PUT
+- Delete transactions using DELETE
 - Calculate current balance
 - Validate transaction amounts
-- Save and load transactions using JSON
+- Handle invalid requests using HTTP errors
+- Save transactions using JSON
 
-## Technologies
+### Technologies
 - Python
+- FastAPI
+- Pydantic
 - JSON
 
-## How to Run
+### Run the API
 
-1. Clone the repository.
-2. Open the project folder.
-3. Run:
+Install dependencies:
 
-```bash
-python3 main.py
-```
+    python3 -m pip install "fastapi[standard]"
 
-## Future Improvements
-- REST API using FastAPI
-- PostgreSQL database
-- User authentication
-- Docker containerization
-- AWS deployment
+Start the server:
+
+    fastapi dev api.py
+
+Open http://127.0.0.1:8000/docs to test the API.
