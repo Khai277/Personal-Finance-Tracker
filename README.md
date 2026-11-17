@@ -1,32 +1,42 @@
 
-## Version 2 - REST API
+## Version 3 - PostgreSQL Database Integration
 
-Built a REST API using Python and FastAPI.
+Upgraded the FastAPI backend from JSON file storage to PostgreSQL.
 
 ### Features
-- Retrieve transactions using GET
-- Add income and expenses using POST
-- Update transactions using PUT
-- Delete transactions using DELETE
-- Calculate current balance
-- Validate transaction amounts
-- Handle invalid requests using HTTP errors
-- Save transactions using JSON
+- Store transactions in PostgreSQL
+- Create, retrieve, update, and delete transactions
+- Automatically generate unique transaction IDs
+- Calculate account balances from database records
+- Validate transaction amounts and prevent insufficient funds
+- Handle invalid transaction IDs with HTTP errors
 
 ### Technologies
 - Python
 - FastAPI
+- PostgreSQL
+- SQLAlchemy
 - Pydantic
-- JSON
+- Psycopg
+
+### Database Setup
+
+1. Install and start PostgreSQL.
+2. Create a database named `finance_tracker`.
+3. Create a `transactions` table with the following columns:
+   - id: SERIAL PRIMARY KEY
+   - type: VARCHAR(20)
+   - amount: NUMERIC(12,2)
+   - category: VARCHAR(100)
 
 ### Run the API
 
 Install dependencies:
 
-    python3 -m pip install "fastapi[standard]"
+    python -m pip install "fastapi[standard]" sqlalchemy "psycopg[binary]"
 
 Start the server:
 
-    fastapi dev api.py
+    python -m fastapi dev api.py
 
-Open http://127.0.0.1:8000/docs to test the API.
+Open http://127.0.0.1:8000/docs to test the endpoints.

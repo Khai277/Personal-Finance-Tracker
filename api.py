@@ -1,8 +1,22 @@
-import json
+from decimal import Decimal
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import TransactionDB
+
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
 
 class Transaction(BaseModel):
     type: str
@@ -15,39 +29,28 @@ def home():
 
 
 @app.get("/balance")
-def get_balance():
-    transactions = load_transactions()
-    balance = 0
+def get_balance(db: Session = Depends(get_db)):
+    transactions = db.query(TransactionDB).all()
+    balance = Decimal("0.00")
 
     for transaction in transactions:
-        if transaction["type"] == "Income":
-            balance += transaction["amount"]
+        if transaction.type == "Income":
+            balance += transaction.amount
         else:
-            balance -= transaction["amount"]
+            balance -= transaction.amount
 
-    return {"balance": round(balance, 2)}
+    return {"balance": float(balance)}
 
-
-def load_transactions():
-    try:
-        with open("transactions.json", "r") as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-def save_transactions(transactions):
-    with open("transactions.json", "w") as file:
-        json.dump(transactions, file, indent=4)
 
 @app.get("/transactions")
-def get_transactions():
-    transactions = load_transactions()
+def get_transactions(db: Session = Depends(get_db)):
+    transactions = db.query(TransactionDB).all()
+
     return transactions
 
 
 @app.post("/transactions", status_code=201)
-def add_transaction(transaction: Transaction):
-    transactions = load_transactions()
+def add_transaction(transaction: Transaction, db: Session = Depends(get_db)):
 
     if transaction.type not in ["Income", "Expense"]:
         raise HTTPException(
@@ -55,31 +58,45 @@ def add_transaction(transaction: Transaction):
             detail="Type must be Income or Expense"
         )
 
-    balance = 0
+    transactions = db.query(TransactionDB).all()
+
+    balance = Decimal("0.00")
 
     for item in transactions:
-        if item["type"] == "Income":
-            balance += item["amount"]
+        if item.type == "Income":
+            balance += item.amount
         else:
-            balance -= item["amount"]
+            balance -= item.amount
 
-    if transaction.type == "Expense" and transaction.amount > balance:
+    if transaction.type == "Expense" and Decimal(str(transaction.amount)) > balance:
         raise HTTPException(
             status_code=400,
             detail="Insufficient funds"
         )
 
-    transactions.append(transaction.model_dump())
-    save_transactions(transactions)
+    new_transaction = TransactionDB(
+        type=transaction.type,
+        amount=Decimal(str(transaction.amount)),
+        category=transaction.category
+    )
 
-    return {"message": "Transaction added successfully"}
+    db.add(new_transaction)
+    db.commit()
+    db.refresh(new_transaction)
+
+    return {
+        "message": "Transaction added successfully",
+        "id": new_transaction.id
+    }
 
 
 @app.put("/transactions/{transaction_id}")
-def update_transaction(transaction_id: int, transaction: Transaction):
-    transactions = load_transactions()
+def update_transaction(transaction_id: int, transaction: Transaction, db: Session = Depends(get_db)):
+    existing_transaction = db.query(TransactionDB).filter(
+        TransactionDB.id == transaction_id
+    ).first()
 
-    if transaction_id < 0 or transaction_id >= len(transactions):
+    if existing_transaction is None:
         raise HTTPException(
             status_code=404,
             detail="Transaction not found"
@@ -91,16 +108,21 @@ def update_transaction(transaction_id: int, transaction: Transaction):
             detail="Type must be Income or Expense"
         )
 
-    updated_transactions = transactions.copy()
-    updated_transactions[transaction_id] = transaction.model_dump()
+    transactions = db.query(TransactionDB).order_by(TransactionDB.id).all()
+    balance = Decimal("0.00")
 
-    balance = 0
-
-    for item in updated_transactions:
-        if item["type"] == "Income":
-            balance += item["amount"]
+    for item in transactions:
+        if item.id == transaction_id:
+            item_type = transaction.type
+            item_amount = Decimal(str(transaction.amount))
         else:
-            balance -= item["amount"]
+            item_type = item.type
+            item_amount = item.amount
+
+        if item_type == "Income":
+            balance += item_amount
+        else:
+            balance -= item_amount
 
         if balance < 0:
             raise HTTPException(
@@ -108,31 +130,38 @@ def update_transaction(transaction_id: int, transaction: Transaction):
                 detail="Insufficient funds"
             )
 
-    save_transactions(updated_transactions)
+    existing_transaction.type = transaction.type
+    existing_transaction.amount = Decimal(str(transaction.amount))
+    existing_transaction.category = transaction.category
+
+    db.commit()
 
     return {"message": "Transaction updated successfully"}
 
 
 @app.delete("/transactions/{transaction_id}")
-def delete_transaction(transaction_id: int):
-    transactions = load_transactions()
+def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
+    existing_transaction = db.query(TransactionDB).filter(
+        TransactionDB.id == transaction_id
+    ).first()
 
-    if transaction_id < 0 or transaction_id >= len(transactions):
+    if existing_transaction is None:
         raise HTTPException(
             status_code=404,
             detail="Transaction not found"
         )
 
-    updated_transactions = transactions.copy()
-    deleted_transaction = updated_transactions.pop(transaction_id)
+    transactions = db.query(TransactionDB).order_by(TransactionDB.id).all()
+    balance = Decimal("0.00")
 
-    balance = 0
+    for transaction in transactions:
+        if transaction.id == transaction_id:
+            continue
 
-    for transaction in updated_transactions:
-        if transaction["type"] == "Income":
-            balance += transaction["amount"]
+        if transaction.type == "Income":
+            balance += transaction.amount
         else:
-            balance -= transaction["amount"]
+            balance -= transaction.amount
 
         if balance < 0:
             raise HTTPException(
@@ -140,10 +169,11 @@ def delete_transaction(transaction_id: int):
                 detail="Deleting this transaction would cause insufficient funds"
             )
 
-    save_transactions(updated_transactions)
+    db.delete(existing_transaction)
+    db.commit()
 
-    return {
-        "message": "Transaction deleted successfully",
-        "deleted_transaction": deleted_transaction
-    }
+    return {"message": "Transaction deleted successfully"}
+
+   
+
 
