@@ -1,5 +1,6 @@
-transactions.json
-__pycache__/
-*.pyc
+.env
 .venv/
+__pycache__/
+.pytest_cache/
+*.pyc
 .DS_Store
