@@ -1,3 +1,8 @@
+from contextlib import asynccontextmanager
+from database import engine
+from models import Base
+import models
+
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from auth import decode_access_token
 from jwt.exceptions import InvalidTokenError
@@ -17,7 +22,12 @@ from models import TransactionDB
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 def get_db():
     db = SessionLocal()
