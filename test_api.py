@@ -1,16 +1,25 @@
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from api import app, get_db
-from models import TransactionDB, UserDB
+from models import Base, TransactionDB, UserDB
 
-TEST_DATABASE_URL = "postgresql+psycopg://localhost:5432/finance_tracker_test"
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+psycopg://localhost:5432/finance_tracker_test"
+)
 
 test_engine = create_engine(TEST_DATABASE_URL)
+
+assert test_engine.url.database == "finance_tracker_test"
+Base.metadata.create_all(bind=test_engine)
+
 TestingSessionLocal = sessionmaker(bind=test_engine)
+
 
 def override_get_db():
     db = TestingSessionLocal()
