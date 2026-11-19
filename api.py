@@ -1,34 +1,71 @@
+from sqlalchemy import text
+import logging
+import time
 from contextlib import asynccontextmanager
-from database import engine
-from models import Base
-import models
+from decimal import Decimal
 
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from auth import decode_access_token
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from jwt.exceptions import InvalidTokenError
 
-from auth import verify_password, create_access_token
-from auth import hash_password
-from models import UserDB
-from sqlalchemy.exc import IntegrityError
-
-from decimal import Decimal
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from database import SessionLocal
-from models import TransactionDB
+from database import engine, SessionLocal
+from models import Base, UserDB, TransactionDB
+from auth import (
+    decode_access_token,
+    verify_password,
+    create_access_token,
+    hash_password
+)
 
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-
+# Database initialization
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
 
+
+# Create FastAPI application
 app = FastAPI(lifespan=lifespan)
 
+
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logger = logging.getLogger("finance_tracker")
+
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start_time = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unexpected error processing request")
+        raise
+
+    duration = time.perf_counter() - start_time
+
+    logger.info(
+        "%s %s - Status: %s - Time: %.3fs",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration
+    )
+
+    return response
+
+
+# Database connection
 def get_db():
     db = SessionLocal()
 
@@ -38,7 +75,9 @@ def get_db():
         db.close()
 
 
+# Authentication
 security = HTTPBearer()
+
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -49,23 +88,38 @@ def get_current_user(
         username = payload.get("sub")
 
         if not isinstance(username, str) or not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token"
+            )
 
     except InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
 
-    user = db.query(UserDB).filter(UserDB.username == username).first()
+    user = db.query(UserDB).filter(
+        UserDB.username == username
+    ).first()
 
     if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(
+            status_code=401,
+            detail="User not found"
+        )
 
     return user
 
 
-
+# Data models
 class Transaction(BaseModel):
     type: str
-    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    amount: Decimal = Field(
+        gt=0,
+        max_digits=12,
+        decimal_places=2
+    )
     category: str
 
 
@@ -73,17 +127,34 @@ class UserRegister(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8)
 
+
 class UserLogin(BaseModel):
     username: str
     password: str
 
+
+# Home endpoint
 @app.get("/")
 def home():
     return {"message": "Welcome to Personal Finance Tracker"}
 
 
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "database": "connected"
+        }
+    except Exception:
+        logger.exception("Database health check failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable"
+        )
 
-
+# Balance endpoint
 @app.get("/balance")
 def get_balance(
     current_user: UserDB = Depends(get_current_user),
@@ -104,7 +175,7 @@ def get_balance(
     return {"balance": float(balance)}
 
 
-
+# Get transactions
 @app.get("/transactions")
 def get_transactions(
     current_user: UserDB = Depends(get_current_user),
@@ -117,7 +188,7 @@ def get_transactions(
     return transactions
 
 
-
+# Add transaction
 @app.post("/transactions", status_code=201)
 def add_transaction(
     transaction: Transaction,
@@ -167,6 +238,7 @@ def add_transaction(
     }
 
 
+# Update transaction
 @app.put("/transactions/{transaction_id}")
 def update_transaction(
     transaction_id: int,
@@ -225,7 +297,7 @@ def update_transaction(
     return {"message": "Transaction updated successfully"}
 
 
-
+# Delete transaction
 @app.delete("/transactions/{transaction_id}")
 def delete_transaction(
     transaction_id: int,
@@ -270,8 +342,12 @@ def delete_transaction(
     return {"message": "Transaction deleted successfully"}
 
 
+# Register user
 @app.post("/register", status_code=201)
-def register(user: UserRegister, db: Session = Depends(get_db)):
+def register(
+    user: UserRegister,
+    db: Session = Depends(get_db)
+):
     existing_user = db.query(UserDB).filter(
         UserDB.username == user.username
     ).first()
@@ -306,8 +382,12 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
     }
 
 
+# Login user
 @app.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(
+    user: UserLogin,
+    db: Session = Depends(get_db)
+):
     existing_user = db.query(UserDB).filter(
         UserDB.username == user.username
     ).first()
@@ -318,7 +398,10 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid username or password"
         )
 
-    if not verify_password(user.password, existing_user.hashed_password):
+    if not verify_password(
+        user.password,
+        existing_user.hashed_password
+    ):
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
@@ -332,8 +415,11 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     }
 
 
+# Current user
 @app.get("/me")
-def get_me(current_user: UserDB = Depends(get_current_user)):
+def get_me(
+    current_user: UserDB = Depends(get_current_user)
+):
     return {
         "id": current_user.id,
         "username": current_user.username
