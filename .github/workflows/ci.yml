@@ -36,12 +36,12 @@ jobs:
 
     steps:
       - name: Download repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install dependencies
         run: |
@@ -65,33 +65,8 @@ jobs:
       contents: read
 
     steps:
-      - name: Debug OIDC identity
-        run: |
-          python - <<'PY'
-          import os
-          import urllib.request
-          import json
-          import base64
-
-          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-          token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-
-          request = urllib.request.Request(
-              url + "&audience=sts.amazonaws.com",
-              headers={"Authorization": "Bearer " + token}
-          )
-
-          response = json.load(urllib.request.urlopen(request))
-          payload = response["value"].split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-
-          for key in ["sub", "aud", "iss", "repository", "ref"]:
-              print(f"{key}: {claims.get(key)}")
-          PY
-
       - name: Authenticate with AWS
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::355437693773:role/FinanceTrackerGitHubDeployRole
           aws-region: us-east-1
